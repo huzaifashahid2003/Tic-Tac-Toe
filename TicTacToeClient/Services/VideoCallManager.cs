@@ -119,6 +119,10 @@ namespace TicTacToeClient.Services
                 {
                     SendFrame(frame);
                 }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Not sending frame - isStreaming:{isStreaming}, stream null:{streamNetworkStream == null}");
+                }
             }
             catch (Exception ex)
             {
@@ -156,12 +160,15 @@ namespace TicTacToeClient.Services
                     // Send frame data
                     streamNetworkStream.Write(frameData, 0, frameData.Length);
                     streamNetworkStream.Flush();
+                    
+                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Sent frame: {frameData.Length} bytes");
                 }
             }
             catch (System.IO.IOException)
             {
                 // Connection closed, stop streaming
                 isStreaming = false;
+                System.Diagnostics.Debug.WriteLine("[VIDEO] Send failed - connection closed");
             }
             catch (Exception ex)
             {
@@ -206,10 +213,12 @@ namespace TicTacToeClient.Services
                 {
                     try
                     {
+                        System.Diagnostics.Debug.WriteLine("[VIDEO] Waiting for incoming connection...");
                         streamClient = await streamListener.AcceptTcpClientAsync();
                         streamNetworkStream = streamClient.GetStream();
-                        isStreaming = true;
+                        System.Diagnostics.Debug.WriteLine("[VIDEO] Connection accepted! Starting streaming...");
                         
+                        isStreaming = true;
                         StreamingStarted?.Invoke();
                         
                         // Start receiving frames
@@ -217,6 +226,7 @@ namespace TicTacToeClient.Services
                     }
                     catch (Exception ex)
                     {
+                        System.Diagnostics.Debug.WriteLine($"[VIDEO] Error accepting connection: {ex.Message}");
                         ErrorOccurred?.Invoke($"Error accepting video connection: {ex.Message}");
                     }
                 });
@@ -237,14 +247,16 @@ namespace TicTacToeClient.Services
         {
             try
             {
+                System.Diagnostics.Debug.WriteLine($"[VIDEO] Connecting to {remoteIP}:{remotePort}...");
                 streamClient = new TcpClient();
                 await streamClient.ConnectAsync(remoteIP, remotePort);
                 streamNetworkStream = streamClient.GetStream();
+                System.Diagnostics.Debug.WriteLine("[VIDEO] Connected! Starting streaming...");
+                
                 isStreaming = true;
+                StreamingStarted?.Invoke();
 
                 cancellationTokenSource = new CancellationTokenSource();
-                
-                StreamingStarted?.Invoke();
 
                 // Start receiving frames in background
                 _ = Task.Run(async () => await ReceiveFramesAsync(cancellationTokenSource.Token));
@@ -253,6 +265,7 @@ namespace TicTacToeClient.Services
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[VIDEO] Connection failed: {ex.Message}");
                 ErrorOccurred?.Invoke($"Failed to connect to video stream: {ex.Message}");
                 return false;
             }
@@ -315,6 +328,7 @@ namespace TicTacToeClient.Services
                     using (MemoryStream ms = new MemoryStream(frameData))
                     {
                         Bitmap frame = new Bitmap(ms);
+                        System.Diagnostics.Debug.WriteLine($"[VIDEO] Received frame: {frameSize} bytes");
                         RemoteFrameReceived?.Invoke(frame);
                     }
                 }

@@ -539,6 +539,8 @@ namespace TicTacToeClient
                 // Send our listening port to server
                 await networkManager.SendCallInfoAsync(videoCallManager.StreamPort);
 
+                System.Diagnostics.Debug.WriteLine($"[CALL] Accepting call - listening on port {videoCallManager.StreamPort}");
+
                 // Create and show video call window
                 videoCallWindow = new VideoCallWindow(videoCallManager, networkManager);
                 videoCallWindow.Show();
@@ -561,6 +563,8 @@ namespace TicTacToeClient
         {
             try
             {
+                System.Diagnostics.Debug.WriteLine($"[CALL] Initiating call - connecting to {opponentIP}:{opponentPort}");
+                
                 // Create video manager
                 videoCallManager = new VideoCallManager();
                 
@@ -574,6 +578,8 @@ namespace TicTacToeClient
                     btnVideoCall.IsEnabled = true;
                     return;
                 }
+
+                System.Diagnostics.Debug.WriteLine("[CALL] Connected successfully!");
 
                 // Create and show video call window
                 videoCallWindow = new VideoCallWindow(videoCallManager, networkManager);
