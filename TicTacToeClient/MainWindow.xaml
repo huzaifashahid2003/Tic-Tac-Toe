@@ -1,0 +1,128 @@
+<Window x:Class="TicTacToeClient.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:TicTacToeClient"
+        Title="Tic Tac Toe - Multiplayer" Height="650" Width="850"
+        ResizeMode="CanResize">
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="500"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- LEFT PANEL: Game Board -->
+        <Grid Grid.Column="0" Margin="0,0,10,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Connection Panel -->
+            <GroupBox Grid.Row="0" Header="Connection" Margin="0,0,0,10">
+                <StackPanel Margin="5">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="Your Name:" VerticalAlignment="Center" Width="80"/>
+                        <TextBox x:Name="txtPlayerName" Width="150" Text="Player" VerticalAlignment="Center" Margin="5,0"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="Server IP:" VerticalAlignment="Center" Width="80"/>
+                        <TextBox x:Name="txtServerIP" Width="150" Text="127.0.0.1" VerticalAlignment="Center" Margin="5,0"/>
+                        <TextBlock Text="Port:" VerticalAlignment="Center" Margin="10,0,5,0"/>
+                        <TextBox x:Name="txtPort" Width="60" Text="5000" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Button x:Name="btnConnect" Content="Connect" Width="100" Height="30" 
+                            HorizontalAlignment="Left" Click="BtnConnect_Click" Margin="0,5,0,0"/>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Status Panel -->
+            <GroupBox Grid.Row="1" Header="Game Status" Margin="0,0,0,10">
+                <Border Background="#F0F0F0" CornerRadius="5" Padding="10" BorderBrush="#CCCCCC" BorderThickness="1" Margin="5">
+                    <StackPanel>
+                        <TextBlock x:Name="txtStatus" Text="Not connected" FontSize="16" FontWeight="Bold" 
+                                   HorizontalAlignment="Center" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="txtTurn" Text="" FontSize="14" HorizontalAlignment="Center" 
+                                   Margin="0,5,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </GroupBox>
+
+            <Separator Grid.Row="2" Margin="0,0,0,15"/>
+
+            <!-- Game Board -->
+            <Grid Grid.Row="3" x:Name="gameGrid" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="100"/>
+                    <RowDefinition Height="100"/>
+                    <RowDefinition Height="100"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="100"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Row 0 -->
+                <Button x:Name="btn0" Grid.Row="0" Grid.Column="0" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="0" Margin="2"/>
+                <Button x:Name="btn1" Grid.Row="0" Grid.Column="1" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="1" Margin="2"/>
+                <Button x:Name="btn2" Grid.Row="0" Grid.Column="2" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="2" Margin="2"/>
+
+                <!-- Row 1 -->
+                <Button x:Name="btn3" Grid.Row="1" Grid.Column="0" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="3" Margin="2"/>
+                <Button x:Name="btn4" Grid.Row="1" Grid.Column="1" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="4" Margin="2"/>
+                <Button x:Name="btn5" Grid.Row="1" Grid.Column="2" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="5" Margin="2"/>
+
+                <!-- Row 2 -->
+                <Button x:Name="btn6" Grid.Row="2" Grid.Column="0" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="6" Margin="2"/>
+                <Button x:Name="btn7" Grid.Row="2" Grid.Column="1" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="7" Margin="2"/>
+                <Button x:Name="btn8" Grid.Row="2" Grid.Column="2" FontSize="48" FontWeight="Bold" 
+                        Click="Cell_Click" Tag="8" Margin="2"/>
+            </Grid>
+
+            <!-- Reset Button -->
+            <Button x:Name="btnReset" Grid.Row="4" Content="New Game (Reconnect)" Width="200" Height="35" 
+                    Margin="0,20,0,0" Click="BtnReset_Click" IsEnabled="False"/>
+        </Grid>
+
+        <!-- RIGHT PANEL: Chat -->
+        <GroupBox Grid.Column="1" Header="Chat Messages" Margin="5">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Chat Display -->
+                <ListBox x:Name="lstChat" Grid.Row="0" Margin="5" 
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                </ListBox>
+
+                <!-- Chat Input -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="5">
+                    <TextBox x:Name="txtChatInput" Width="260" Height="25" 
+                             IsEnabled="False" KeyDown="TxtChatInput_KeyDown"/>
+                    <Button x:Name="btnSendChat" Content="Send" Width="60" Height="25" 
+                            Margin="5,0,0,0" Click="BtnSendChat_Click" IsEnabled="False"/>
+                </StackPanel>
+
+                <!-- Video Call Button -->
+                <Button x:Name="btnVideoCall" Grid.Row="2" Content="📹 Video Call" 
+                        Width="320" Height="35" Margin="5,10,5,5"
+                        Click="BtnVideoCall_Click" IsEnabled="False" 
+                        FontSize="14" FontWeight="Bold"/>
+            </Grid>
+        </GroupBox>
+    </Grid>
+</Window>
