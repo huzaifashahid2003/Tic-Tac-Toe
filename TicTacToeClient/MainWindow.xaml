@@ -118,7 +118,7 @@
                 </StackPanel>
 
                 <!-- Video Call Button -->
-                <Button x:Name="btnVideoCall" Grid.Row="2" Content="📹 Video Call" 
+                <Button x:Name="btnVideoCall" Grid.Row="2" Content="Video Call" 
                         Width="320" Height="35" Margin="5,10,5,5"
                         Click="BtnVideoCall_Click" IsEnabled="False" 
                         FontSize="14" FontWeight="Bold"/>
