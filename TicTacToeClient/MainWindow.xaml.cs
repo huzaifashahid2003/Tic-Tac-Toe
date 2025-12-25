@@ -467,8 +467,30 @@ namespace TicTacToeClient
         {
             Dispatcher.Invoke(async () =>
             {
-                // Received opponent's IP and port - connect automatically
-                await StartVideoCallAsInitiator(opponentIP, opponentPort);
+                System.Diagnostics.Debug.WriteLine($"[CALL] Received opponent's connection info: {opponentIP}:{opponentPort}");
+                
+                // If we don't have a video manager yet, we're the initiator
+                if (videoCallManager == null)
+                {
+                    // We initiated the call - set up full bidirectional video
+                    await StartVideoCallAsInitiator(opponentIP, opponentPort);
+                }
+                else
+                {
+                    // We accepted the call and are already listening
+                    // Now connect to opponent's port to send our video
+                    System.Diagnostics.Debug.WriteLine($"[CALL] Connecting to opponent at {opponentIP}:{opponentPort} to send our video");
+                    bool connected = await videoCallManager.ConnectToStreamAsync(opponentIP, opponentPort);
+                    if (!connected)
+                    {
+                        MessageBox.Show("Failed to connect to send video.", "Error", 
+                            MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("[CALL] Fully connected - both video streams active");
+                    }
+                }
             });
         }
 
@@ -526,7 +548,7 @@ namespace TicTacToeClient
                 // Create video manager
                 videoCallManager = new VideoCallManager();
                 
-                // Start listening for incoming video stream
+                // Start listening for incoming video stream (to receive their video)
                 bool listening = await videoCallManager.StartListeningAsync();
                 
                 if (!listening)
@@ -536,10 +558,10 @@ namespace TicTacToeClient
                     return;
                 }
 
-                // Send our listening port to server
+                // Send our listening port to server so caller can connect
                 await networkManager.SendCallInfoAsync(videoCallManager.StreamPort);
 
-                System.Diagnostics.Debug.WriteLine($"[CALL] Accepting call - listening on port {videoCallManager.StreamPort}");
+                System.Diagnostics.Debug.WriteLine($"[CALL] Accepting call - listening on port {videoCallManager.StreamPort} for incoming video");
 
                 // Create and show video call window
                 videoCallWindow = new VideoCallWindow(videoCallManager, networkManager);
@@ -563,23 +585,36 @@ namespace TicTacToeClient
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"[CALL] Initiating call - connecting to {opponentIP}:{opponentPort}");
+                System.Diagnostics.Debug.WriteLine($"[CALL] Initiating call - setting up bidirectional video with {opponentIP}:{opponentPort}");
                 
                 // Create video manager
                 videoCallManager = new VideoCallManager();
                 
-                // Connect to opponent's video stream using provided IP and port
-                bool connected = await videoCallManager.ConnectToStreamAsync(opponentIP, opponentPort);
-                
-                if (!connected)
+                // 1. Start listening for incoming video stream (to receive their video)
+                bool listening = await videoCallManager.StartListeningAsync();
+                if (!listening)
                 {
-                    MessageBox.Show("Failed to connect to video stream.", "Error", 
+                    MessageBox.Show("Failed to start video listener.", "Error", 
                         MessageBoxButton.OK, MessageBoxImage.Error);
                     btnVideoCall.IsEnabled = true;
                     return;
                 }
+                System.Diagnostics.Debug.WriteLine($"[CALL] Listening on port {videoCallManager.StreamPort} for incoming video");
+                
+                // 2. Connect to opponent's port to send our video
+                bool connected = await videoCallManager.ConnectToStreamAsync(opponentIP, opponentPort);
+                if (!connected)
+                {
+                    MessageBox.Show("Failed to connect to send video stream.", "Error", 
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    btnVideoCall.IsEnabled = true;
+                    return;
+                }
+                System.Diagnostics.Debug.WriteLine($"[CALL] Connected to {opponentIP}:{opponentPort} to send our video");
 
-                System.Diagnostics.Debug.WriteLine("[CALL] Connected successfully!");
+                // 3. Send our listening port so opponent can connect back to us
+                await networkManager.SendCallInfoAsync(videoCallManager.StreamPort);
+                System.Diagnostics.Debug.WriteLine($"[CALL] Sent our port {videoCallManager.StreamPort} to opponent");
 
                 // Create and show video call window
                 videoCallWindow = new VideoCallWindow(videoCallManager, networkManager);

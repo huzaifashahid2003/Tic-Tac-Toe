@@ -18,8 +18,10 @@ namespace TicTacToeClient.Services
     {
         private VideoCaptureDevice? videoSource;
         private TcpListener? streamListener;
-        private TcpClient? streamClient;
-        private NetworkStream? streamNetworkStream;
+        private TcpClient? sendClient;        // For sending our video
+        private TcpClient? receiveClient;     // For receiving their video
+        private NetworkStream? sendStream;
+        private NetworkStream? receiveStream;
         private CancellationTokenSource? cancellationTokenSource;
         private bool isStreaming = false;
         private int videoPort;
@@ -115,13 +117,13 @@ namespace TicTacToeClient.Services
                 LocalFrameReceived?.Invoke(frame);
 
                 // If streaming is active, send frame to remote peer
-                if (isStreaming && streamNetworkStream != null && streamNetworkStream.CanWrite)
+                if (isStreaming && sendStream != null && sendStream.CanWrite)
                 {
                     SendFrame(frame);
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Not sending frame - isStreaming:{isStreaming}, stream null:{streamNetworkStream == null}");
+                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Not sending frame - isStreaming:{isStreaming}, stream null:{sendStream == null}");
                 }
             }
             catch (Exception ex)
@@ -138,7 +140,7 @@ namespace TicTacToeClient.Services
             try
             {
                 // Check connection before sending
-                if (streamNetworkStream == null || !streamNetworkStream.CanWrite || streamClient == null || !streamClient.Connected)
+                if (sendStream == null || !sendStream.CanWrite || sendClient == null || !sendClient.Connected)
                 {
                     return;
                 }
@@ -155,11 +157,11 @@ namespace TicTacToeClient.Services
 
                     // Send frame size first (4 bytes)
                     byte[] sizeData = BitConverter.GetBytes(frameData.Length);
-                    streamNetworkStream.Write(sizeData, 0, 4);
+                    sendStream.Write(sizeData, 0, 4);
 
                     // Send frame data
-                    streamNetworkStream.Write(frameData, 0, frameData.Length);
-                    streamNetworkStream.Flush();
+                    sendStream.Write(frameData, 0, frameData.Length);
+                    sendStream.Flush();
                     
                     System.Diagnostics.Debug.WriteLine($"[VIDEO] Sent frame: {frameData.Length} bytes");
                 }
@@ -195,6 +197,7 @@ namespace TicTacToeClient.Services
 
         /// <summary>
         /// Starts listening for incoming video stream (as receiver)
+        /// Only accepts ONE connection for receiving their video
         /// </summary>
         public async Task<bool> StartListeningAsync()
         {
@@ -208,18 +211,16 @@ namespace TicTacToeClient.Services
 
                 cancellationTokenSource = new CancellationTokenSource();
                 
-                // Wait for connection in background
+                System.Diagnostics.Debug.WriteLine($"[VIDEO] Listening on port {videoPort} for incoming video...");
+                
+                // Wait for ONE connection to receive their video
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        System.Diagnostics.Debug.WriteLine("[VIDEO] Waiting for incoming connection...");
-                        streamClient = await streamListener.AcceptTcpClientAsync();
-                        streamNetworkStream = streamClient.GetStream();
-                        System.Diagnostics.Debug.WriteLine("[VIDEO] Connection accepted! Starting streaming...");
-                        
-                        isStreaming = true;
-                        StreamingStarted?.Invoke();
+                        receiveClient = await streamListener.AcceptTcpClientAsync();
+                        receiveStream = receiveClient.GetStream();
+                        System.Diagnostics.Debug.WriteLine("[VIDEO] Incoming video connection accepted!");
                         
                         // Start receiving frames
                         await ReceiveFramesAsync(cancellationTokenSource.Token);
@@ -241,25 +242,27 @@ namespace TicTacToeClient.Services
         }
 
         /// <summary>
-        /// Connects to remote peer's video stream (as sender)
+        /// Connects to remote peer's video stream to send our video
         /// </summary>
         public async Task<bool> ConnectToStreamAsync(string remoteIP, int remotePort)
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"[VIDEO] Connecting to {remoteIP}:{remotePort}...");
-                streamClient = new TcpClient();
-                await streamClient.ConnectAsync(remoteIP, remotePort);
-                streamNetworkStream = streamClient.GetStream();
-                System.Diagnostics.Debug.WriteLine("[VIDEO] Connected! Starting streaming...");
+                System.Diagnostics.Debug.WriteLine($"[VIDEO] Connecting to {remoteIP}:{remotePort} to send video...");
+                
+                // Connect to send our video to their listening port
+                sendClient = new TcpClient();
+                await sendClient.ConnectAsync(remoteIP, remotePort);
+                sendStream = sendClient.GetStream();
+                System.Diagnostics.Debug.WriteLine("[VIDEO] Outgoing video connection established!");
                 
                 isStreaming = true;
                 StreamingStarted?.Invoke();
 
-                cancellationTokenSource = new CancellationTokenSource();
-
-                // Start receiving frames in background
-                _ = Task.Run(async () => await ReceiveFramesAsync(cancellationTokenSource.Token));
+                if (cancellationTokenSource == null)
+                {
+                    cancellationTokenSource = new CancellationTokenSource();
+                }
 
                 return true;
             }
@@ -280,10 +283,10 @@ namespace TicTacToeClient.Services
             
             try
             {
-                while (!cancellationToken.IsCancellationRequested && streamNetworkStream != null && streamNetworkStream.CanRead)
+                while (!cancellationToken.IsCancellationRequested && receiveStream != null && receiveStream.CanRead)
                 {
                     // Check if data is available to avoid blocking
-                    if (!streamClient!.Connected)
+                    if (!receiveClient!.Connected)
                     {
                         break; // Connection lost
                     }
@@ -292,12 +295,12 @@ namespace TicTacToeClient.Services
                     int bytesRead = 0;
                     while (bytesRead < 4 && !cancellationToken.IsCancellationRequested)
                     {
-                        if (!streamNetworkStream.CanRead || !streamClient.Connected)
+                        if (!receiveStream.CanRead || !receiveClient.Connected)
                         {
                             return; // Connection closed
                         }
                         
-                        int read = await streamNetworkStream.ReadAsync(sizeBuffer, bytesRead, 4 - bytesRead, cancellationToken);
+                        int read = await receiveStream.ReadAsync(sizeBuffer, bytesRead, 4 - bytesRead, cancellationToken);
                         if (read == 0) return; // Connection closed
                         bytesRead += read;
                     }
@@ -314,12 +317,12 @@ namespace TicTacToeClient.Services
                     bytesRead = 0;
                     while (bytesRead < frameSize && !cancellationToken.IsCancellationRequested)
                     {
-                        if (!streamNetworkStream.CanRead || !streamClient.Connected)
+                        if (!receiveStream.CanRead || !receiveClient.Connected)
                         {
                             return; // Connection closed
                         }
                         
-                        int read = await streamNetworkStream.ReadAsync(frameData, bytesRead, frameSize - bytesRead, cancellationToken);
+                        int read = await receiveStream.ReadAsync(frameData, bytesRead, frameSize - bytesRead, cancellationToken);
                         if (read == 0) return; // Connection closed
                         bytesRead += read;
                     }
@@ -369,13 +372,25 @@ namespace TicTacToeClient.Services
 
                 try
                 {
-                    streamNetworkStream?.Close();
+                    sendStream?.Close();
                 }
                 catch { }
 
                 try
                 {
-                    streamClient?.Close();
+                    receiveStream?.Close();
+                }
+                catch { }
+
+                try
+                {
+                    sendClient?.Close();
+                }
+                catch { }
+
+                try
+                {
+                    receiveClient?.Close();
                 }
                 catch { }
 
@@ -385,8 +400,10 @@ namespace TicTacToeClient.Services
                 }
                 catch { }
 
-                streamNetworkStream = null;
-                streamClient = null;
+                sendStream = null;
+                receiveStream = null;
+                sendClient = null;
+                receiveClient = null;
                 streamListener = null;
                 cancellationTokenSource = null;
             }
