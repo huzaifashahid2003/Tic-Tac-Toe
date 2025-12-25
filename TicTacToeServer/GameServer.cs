@@ -201,6 +201,23 @@ namespace TicTacToeServer
                         char opponent = playerSymbol == 'X' ? 'Y' : 'X';
                         await SendMessageToPlayer(opponent, "CALL_ACCEPT");
                     }
+                    else if (message.StartsWith("CALL_INFO:"))
+                    {
+                        // Player sending their video port
+                        string port = message.Substring(10);
+                        Console.WriteLine($"[VIDEO CALL] Player {playerSymbol} video port: {port}");
+                        
+                        // Get the player's IP address
+                        char opponent = playerSymbol == 'X' ? 'Y' : 'X';
+                        TcpClient? opponentClient = playerMap.ContainsKey(opponent) ? playerMap[opponent] : null;
+                        
+                        if (opponentClient != null)
+                        {
+                            string playerIP = ((System.Net.IPEndPoint)playerMap[playerSymbol].Client.RemoteEndPoint!).Address.ToString();
+                            await SendMessageToPlayer(opponent, $"CALL_INFO:{playerIP}:{port}");
+                            Console.WriteLine($"[VIDEO CALL] Sent connection info to Player {opponent}: {playerIP}:{port}");
+                        }
+                    }
                     else if (message.StartsWith("CALL_REJECT"))
                     {
                         // Player rejected the call

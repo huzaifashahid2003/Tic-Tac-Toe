@@ -207,6 +207,32 @@ namespace TicTacToeClient.Services
         }
 
         /// <summary>
+        /// Sends video connection info (port) to server
+        /// </summary>
+        public async Task<bool> SendCallInfoAsync(int port)
+        {
+            try
+            {
+                if (writer != null && IsConnected)
+                {
+                    await writer.WriteLineAsync($"CALL_INFO:{port}");
+                    await writer.FlushAsync();
+                    return true;
+                }
+                else
+                {
+                    ErrorOccurred?.Invoke("Not connected to server");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorOccurred?.Invoke($"Failed to send call info: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Rejects an incoming video call
         /// </summary>
         public async Task<bool> SendCallRejectAsync()

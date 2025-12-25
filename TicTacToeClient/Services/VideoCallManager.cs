@@ -133,6 +133,12 @@ namespace TicTacToeClient.Services
         {
             try
             {
+                // Check connection before sending
+                if (streamNetworkStream == null || !streamNetworkStream.CanWrite || streamClient == null || !streamClient.Connected)
+                {
+                    return;
+                }
+
                 using (MemoryStream ms = new MemoryStream())
                 {
                     // Compress frame as JPEG
@@ -145,12 +151,17 @@ namespace TicTacToeClient.Services
 
                     // Send frame size first (4 bytes)
                     byte[] sizeData = BitConverter.GetBytes(frameData.Length);
-                    streamNetworkStream?.Write(sizeData, 0, 4);
+                    streamNetworkStream.Write(sizeData, 0, 4);
 
                     // Send frame data
-                    streamNetworkStream?.Write(frameData, 0, frameData.Length);
-                    streamNetworkStream?.Flush();
+                    streamNetworkStream.Write(frameData, 0, frameData.Length);
+                    streamNetworkStream.Flush();
                 }
+            }
+            catch (System.IO.IOException)
+            {
+                // Connection closed, stop streaming
+                isStreaming = false;
             }
             catch (Exception ex)
             {
@@ -256,12 +267,23 @@ namespace TicTacToeClient.Services
             
             try
             {
-                while (!cancellationToken.IsCancellationRequested && streamNetworkStream != null)
+                while (!cancellationToken.IsCancellationRequested && streamNetworkStream != null && streamNetworkStream.CanRead)
                 {
-                    // Read frame size
-                    int bytesRead = 0;
-                    while (bytesRead < 4)
+                    // Check if data is available to avoid blocking
+                    if (!streamClient!.Connected)
                     {
+                        break; // Connection lost
+                    }
+
+                    // Read frame size with timeout check
+                    int bytesRead = 0;
+                    while (bytesRead < 4 && !cancellationToken.IsCancellationRequested)
+                    {
+                        if (!streamNetworkStream.CanRead || !streamClient.Connected)
+                        {
+                            return; // Connection closed
+                        }
+                        
                         int read = await streamNetworkStream.ReadAsync(sizeBuffer, bytesRead, 4 - bytesRead, cancellationToken);
                         if (read == 0) return; // Connection closed
                         bytesRead += read;
@@ -277,8 +299,13 @@ namespace TicTacToeClient.Services
                     // Read frame data
                     byte[] frameData = new byte[frameSize];
                     bytesRead = 0;
-                    while (bytesRead < frameSize)
+                    while (bytesRead < frameSize && !cancellationToken.IsCancellationRequested)
                     {
+                        if (!streamNetworkStream.CanRead || !streamClient.Connected)
+                        {
+                            return; // Connection closed
+                        }
+                        
                         int read = await streamNetworkStream.ReadAsync(frameData, bytesRead, frameSize - bytesRead, cancellationToken);
                         if (read == 0) return; // Connection closed
                         bytesRead += read;
@@ -292,11 +319,19 @@ namespace TicTacToeClient.Services
                     }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // Normal cancellation, don't report error
+            }
+            catch (System.IO.IOException)
+            {
+                // Connection closed by remote, don't report error
+            }
             catch (Exception ex)
             {
                 if (!cancellationToken.IsCancellationRequested)
                 {
-                    ErrorOccurred?.Invoke($"Error receiving frames: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Error receiving frames: {ex.Message}");
                 }
             }
             finally
@@ -315,9 +350,26 @@ namespace TicTacToeClient.Services
                 isStreaming = false;
                 cancellationTokenSource?.Cancel();
 
-                streamNetworkStream?.Close();
-                streamClient?.Close();
-                streamListener?.Stop();
+                // Give a moment for cancellation to propagate
+                System.Threading.Thread.Sleep(100);
+
+                try
+                {
+                    streamNetworkStream?.Close();
+                }
+                catch { }
+
+                try
+                {
+                    streamClient?.Close();
+                }
+                catch { }
+
+                try
+                {
+                    streamListener?.Stop();
+                }
+                catch { }
 
                 streamNetworkStream = null;
                 streamClient = null;
@@ -326,7 +378,7 @@ namespace TicTacToeClient.Services
             }
             catch (Exception ex)
             {
-                ErrorOccurred?.Invoke($"Error stopping stream: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VIDEO] Error stopping stream: {ex.Message}");
             }
         }
 

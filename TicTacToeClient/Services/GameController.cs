@@ -15,6 +15,7 @@ namespace TicTacToeClient.Services
         public event Action<ChatMessage>? NewChatMessage; // Event for new chat messages
         public event Action<string>? IncomingCall; // Event for incoming video call (caller name)
         public event Action? CallAccepted; // Event when call is accepted
+        public event Action<string, int>? CallInfo; // Event with opponent IP and port
         public event Action? CallRejected; // Event when call is rejected
         public event Action? CallEnded; // Event when call ends
 
@@ -113,6 +114,16 @@ namespace TicTacToeClient.Services
             {
                 // Opponent accepted the call
                 CallAccepted?.Invoke();
+            }
+            else if (message.StartsWith("CALL_INFO:"))
+            {
+                // Received opponent's connection info
+                string info = message.Substring(10);
+                string[] parts = info.Split(':');
+                if (parts.Length == 2 && int.TryParse(parts[1], out int port))
+                {
+                    CallInfo?.Invoke(parts[0], port);
+                }
             }
             else if (message == "CALL_REJECT")
             {

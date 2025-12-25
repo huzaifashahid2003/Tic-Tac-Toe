@@ -106,10 +106,17 @@ namespace TicTacToeClient
 
         private void OnStreamingStopped()
         {
-            Dispatcher.Invoke(() =>
+            try
             {
-                txtRemoteStatus.Text = "Connection lost";
-            });
+                Dispatcher.Invoke(() =>
+                {
+                    txtRemoteStatus.Text = "Connection lost";
+                });
+            }
+            catch
+            {
+                // Window might be closing
+            }
         }
 
         private BitmapImage BitmapToImageSource(Bitmap bitmap)

@@ -47,6 +47,7 @@ namespace TicTacToeClient
             gameController.NewChatMessage += OnNewChatMessage;
             gameController.IncomingCall += OnIncomingCall;
             gameController.CallAccepted += OnCallAccepted;
+            gameController.CallInfo += OnCallInfo;
             gameController.CallRejected += OnCallRejected;
             gameController.CallEnded += OnCallEnded;
         }
@@ -455,14 +456,19 @@ namespace TicTacToeClient
 
         private void OnCallAccepted()
         {
+            Dispatcher.Invoke(() =>
+            {
+                // Call was accepted - just wait for connection info
+                txtStatus.Text = "Call accepted! Waiting for connection...";
+            });
+        }
+
+        private void OnCallInfo(string opponentIP, int opponentPort)
+        {
             Dispatcher.Invoke(async () =>
             {
-                // Call was accepted by opponent
-                MessageBox.Show("Call accepted! Starting video call...", "Video Call", 
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-                
-                // Start video call as initiator (connect to opponent)
-                await StartVideoCallAsInitiator();
+                // Received opponent's IP and port - connect automatically
+                await StartVideoCallAsInitiator(opponentIP, opponentPort);
             });
         }
 
@@ -479,12 +485,19 @@ namespace TicTacToeClient
         {
             Dispatcher.Invoke(() =>
             {
+                // Close video window if open
+                if (videoCallWindow != null)
+                {
+                    try
+                    {
+                        videoCallWindow.Close();
+                    }
+                    catch { }
+                    videoCallWindow = null;
+                }
+                
                 MessageBox.Show("The call has ended.", "Video Call", 
                     MessageBoxButton.OK, MessageBoxImage.Information);
-                
-                // Close video window if open
-                videoCallWindow?.Close();
-                videoCallWindow = null;
             });
         }
 
@@ -505,23 +518,11 @@ namespace TicTacToeClient
 
         private async System.Threading.Tasks.Task AcceptVideoCall()
         {
-            // Send accept message
-            await networkManager.SendCallAcceptAsync();
-            
-            // Start video call as receiver (listen for connection)
-            await StartVideoCallAsReceiver();
-        }
-
-        private async System.Threading.Tasks.Task RejectVideoCall()
-        {
-            // Send reject message
-            await networkManager.SendCallRejectAsync();
-        }
-
-        private async System.Threading.Tasks.Task StartVideoCallAsReceiver()
-        {
             try
             {
+                // Send accept message
+                await networkManager.SendCallAcceptAsync();
+                
                 // Create video manager
                 videoCallManager = new VideoCallManager();
                 
@@ -535,48 +536,36 @@ namespace TicTacToeClient
                     return;
                 }
 
+                // Send our listening port to server
+                await networkManager.SendCallInfoAsync(videoCallManager.StreamPort);
+
                 // Create and show video call window
                 videoCallWindow = new VideoCallWindow(videoCallManager, networkManager);
                 videoCallWindow.Show();
                 videoCallWindow.StartCall();
-                
-                // Note: In real P2P, we'd exchange IP and port through server
-                // For simplicity, we're using the server connection IP
-                MessageBox.Show(
-                    $"Waiting for connection on port {videoCallManager.StreamPort}.\n" +
-                    "The caller will connect automatically.",
-                    "Video Call", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error starting video call: {ex.Message}", "Error", 
+                MessageBox.Show($"Error accepting call: {ex.Message}", "Error", 
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private async System.Threading.Tasks.Task StartVideoCallAsInitiator()
+        private async System.Threading.Tasks.Task RejectVideoCall()
+        {
+            // Send reject message
+            await networkManager.SendCallRejectAsync();
+        }
+
+        private async System.Threading.Tasks.Task StartVideoCallAsInitiator(string opponentIP, int opponentPort)
         {
             try
             {
                 // Create video manager
                 videoCallManager = new VideoCallManager();
                 
-                // For this demo, we'll ask user for opponent's video port
-                // In a full implementation, this would be exchanged through the server
-                string? input = Microsoft.VisualBasic.Interaction.InputBox(
-                    "Enter opponent's video port:", "Connect to Video", "");
-                
-                if (string.IsNullOrEmpty(input) || !int.TryParse(input, out int port))
-                {
-                    MessageBox.Show("Invalid port number.", "Error", 
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                    btnVideoCall.IsEnabled = true;
-                    return;
-                }
-
-                // Connect to opponent's video stream
-                // Use the server IP as opponent IP (same LAN)
-                bool connected = await videoCallManager.ConnectToStreamAsync(txtServerIP.Text, port);
+                // Connect to opponent's video stream using provided IP and port
+                bool connected = await videoCallManager.ConnectToStreamAsync(opponentIP, opponentPort);
                 
                 if (!connected)
                 {

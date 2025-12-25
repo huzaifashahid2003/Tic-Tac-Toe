@@ -25,3 +25,4 @@ C:\Users\Huzaifa\OneDrive\Desktop\NP_Project\TicTacToeClient\obj\Debug\net8.0-wi
 C:\Users\Huzaifa\OneDrive\Desktop\NP_Project\TicTacToeClient\obj\Debug\net8.0-windows\TicTacToeClient.pdb
 C:\Users\Huzaifa\OneDrive\Desktop\NP_Project\TicTacToeClient\obj\Debug\net8.0-windows\TicTacToeClient.genruntimeconfig.cache
 C:\Users\Huzaifa\OneDrive\Desktop\NP_Project\TicTacToeClient\obj\Debug\net8.0-windows\ref\TicTacToeClient.dll
+C:\Users\Huzaifa\OneDrive\Desktop\NP_Project\TicTacToeClient\obj\Debug\net8.0-windows\TicTacToeClient.sourcelink.json
