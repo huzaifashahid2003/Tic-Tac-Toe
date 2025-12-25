@@ -16,8 +16,9 @@ namespace TicTacToeClient
         private DispatcherTimer callTimer;
         private DateTime callStartTime;
         private bool isCallActive = false;
+        private bool webcamStarted = false;
 
-        public VideoCallWindow(VideoCallManager videoManager, NetworkManager networkManager)
+        public VideoCallWindow(VideoCallManager videoManager, NetworkManager networkManager, bool delayWebcamStart = false)
         {
             InitializeComponent();
             
@@ -36,15 +37,43 @@ namespace TicTacToeClient
             callTimer.Interval = TimeSpan.FromSeconds(1);
             callTimer.Tick += CallTimer_Tick;
 
-            // Start webcam
+            // Start webcam immediately unless delayed
+            if (!delayWebcamStart)
+            {
+                StartWebcamInternal();
+            }
+            else
+            {
+                txtLocalStatus.Text = "Waiting for connection...";
+                txtCallStatus.Text = "Connecting...";
+            }
+        }
+
+        private void StartWebcamInternal()
+        {
+            if (webcamStarted) return;
+            
             if (videoManager.StartWebcam())
             {
                 txtLocalStatus.Text = "Camera ready";
+                webcamStarted = true;
             }
             else
             {
                 txtLocalStatus.Text = "Camera not available";
             }
+        }
+
+        /// <summary>
+        /// Start webcam and call - called when connection is fully established (for acceptor)
+        /// </summary>
+        public void StartWebcamAndCall()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                StartWebcamInternal();
+                StartCall();
+            });
         }
 
         public void StartCall()
@@ -53,6 +82,21 @@ namespace TicTacToeClient
             callStartTime = DateTime.Now;
             callTimer.Start();
             txtCallStatus.Text = "Call connected";
+        }
+
+        /// <summary>
+        /// Refresh the streaming status - called when connection is fully established
+        /// </summary>
+        public void RefreshStreaming()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (videoManager.IsActive)
+                {
+                    txtRemoteStatus.Text = "Streaming active";
+                    System.Diagnostics.Debug.WriteLine("[VIDEO WINDOW] Streaming is now active");
+                }
+            });
         }
 
         private void OnLocalFrameReceived(Bitmap frame)

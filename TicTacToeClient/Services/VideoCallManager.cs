@@ -114,21 +114,26 @@ namespace TicTacToeClient.Services
                 Bitmap frame = (Bitmap)eventArgs.Frame.Clone();
                 
                 // Notify UI of new local frame
-                LocalFrameReceived?.Invoke(frame);
+                LocalFrameReceived?.Invoke((Bitmap)frame.Clone());
 
                 // If streaming is active, send frame to remote peer
-                if (isStreaming && sendStream != null && sendStream.CanWrite)
+                if (isStreaming && sendStream != null && sendStream.CanWrite && sendClient != null && sendClient.Connected)
                 {
                     SendFrame(frame);
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Not sending frame - isStreaming:{isStreaming}, stream null:{sendStream == null}");
+                    frame.Dispose();
+                    // Only log occasionally to avoid spam
+                    if (DateTime.Now.Second % 5 == 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[VIDEO] Not sending frame - isStreaming:{isStreaming}, sendStream null:{sendStream == null}, sendClient connected:{sendClient?.Connected}");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                ErrorOccurred?.Invoke($"Error processing frame: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[VIDEO] Error processing frame: {ex.Message}");
             }
         }
 
@@ -142,6 +147,7 @@ namespace TicTacToeClient.Services
                 // Check connection before sending
                 if (sendStream == null || !sendStream.CanWrite || sendClient == null || !sendClient.Connected)
                 {
+                    frame.Dispose();
                     return;
                 }
 
@@ -149,6 +155,12 @@ namespace TicTacToeClient.Services
                 {
                     // Compress frame as JPEG
                     ImageCodecInfo jpegCodec = GetEncoder(ImageFormat.Jpeg);
+                    if (jpegCodec == null)
+                    {
+                        frame.Dispose();
+                        return;
+                    }
+                    
                     EncoderParameters encoderParams = new EncoderParameters(1);
                     encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, 50L); // Quality 50%
                     
@@ -157,11 +169,14 @@ namespace TicTacToeClient.Services
 
                     // Send frame size first (4 bytes)
                     byte[] sizeData = BitConverter.GetBytes(frameData.Length);
-                    sendStream.Write(sizeData, 0, 4);
-
-                    // Send frame data
-                    sendStream.Write(frameData, 0, frameData.Length);
-                    sendStream.Flush();
+                    
+                    lock (sendStream)
+                    {
+                        sendStream.Write(sizeData, 0, 4);
+                        // Send frame data
+                        sendStream.Write(frameData, 0, frameData.Length);
+                        sendStream.Flush();
+                    }
                     
                     System.Diagnostics.Debug.WriteLine($"[VIDEO] Sent frame: {frameData.Length} bytes");
                 }
@@ -172,10 +187,19 @@ namespace TicTacToeClient.Services
                 isStreaming = false;
                 System.Diagnostics.Debug.WriteLine("[VIDEO] Send failed - connection closed");
             }
+            catch (ObjectDisposedException)
+            {
+                // Stream disposed, stop streaming
+                isStreaming = false;
+            }
             catch (Exception ex)
             {
                 // Suppress errors to avoid spamming, streaming might be interrupted
                 System.Diagnostics.Debug.WriteLine($"[VIDEO] Send frame error: {ex.Message}");
+            }
+            finally
+            {
+                frame.Dispose();
             }
         }
 
@@ -246,32 +270,66 @@ namespace TicTacToeClient.Services
         /// </summary>
         public async Task<bool> ConnectToStreamAsync(string remoteIP, int remotePort)
         {
-            try
+            const int maxRetries = 3;
+            const int retryDelayMs = 500;
+            
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                System.Diagnostics.Debug.WriteLine($"[VIDEO] Connecting to {remoteIP}:{remotePort} to send video...");
-                
-                // Connect to send our video to their listening port
-                sendClient = new TcpClient();
-                await sendClient.ConnectAsync(remoteIP, remotePort);
-                sendStream = sendClient.GetStream();
-                System.Diagnostics.Debug.WriteLine("[VIDEO] Outgoing video connection established!");
-                
-                isStreaming = true;
-                StreamingStarted?.Invoke();
-
-                if (cancellationTokenSource == null)
+                try
                 {
-                    cancellationTokenSource = new CancellationTokenSource();
-                }
+                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Connecting to {remoteIP}:{remotePort} to send video (attempt {attempt}/{maxRetries})...");
+                    
+                    // Connect to send our video to their listening port
+                    sendClient = new TcpClient();
+                    
+                    // Set timeouts
+                    sendClient.SendTimeout = 5000;
+                    sendClient.ReceiveTimeout = 5000;
+                    
+                    // Use a connection timeout
+                    var connectTask = sendClient.ConnectAsync(remoteIP, remotePort);
+                    if (await Task.WhenAny(connectTask, Task.Delay(5000)) != connectTask)
+                    {
+                        throw new TimeoutException("Connection timed out");
+                    }
+                    
+                    await connectTask; // Ensure any exception is thrown
+                    
+                    sendStream = sendClient.GetStream();
+                    System.Diagnostics.Debug.WriteLine("[VIDEO] Outgoing video connection established!");
+                    
+                    isStreaming = true;
+                    StreamingStarted?.Invoke();
 
-                return true;
+                    if (cancellationTokenSource == null)
+                    {
+                        cancellationTokenSource = new CancellationTokenSource();
+                    }
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[VIDEO] Connection attempt {attempt} failed: {ex.Message}");
+                    
+                    // Clean up failed connection
+                    try { sendClient?.Close(); } catch { }
+                    sendClient = null;
+                    sendStream = null;
+                    
+                    if (attempt < maxRetries)
+                    {
+                        await Task.Delay(retryDelayMs);
+                    }
+                    else
+                    {
+                        ErrorOccurred?.Invoke($"Failed to connect to video stream after {maxRetries} attempts: {ex.Message}");
+                        return false;
+                    }
+                }
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[VIDEO] Connection failed: {ex.Message}");
-                ErrorOccurred?.Invoke($"Failed to connect to video stream: {ex.Message}");
-                return false;
-            }
+            
+            return false;
         }
 
         /// <summary>
@@ -414,14 +472,16 @@ namespace TicTacToeClient.Services
         }
 
         /// <summary>
-        /// Gets an available TCP port
+        /// Gets an available TCP port that works for LAN connections
         /// </summary>
         private int GetAvailablePort()
         {
-            TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+            // Use IPAddress.Any to ensure the port works for all network interfaces
+            TcpListener listener = new TcpListener(IPAddress.Any, 0);
             listener.Start();
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
             listener.Stop();
+            System.Diagnostics.Debug.WriteLine($"[VIDEO] Found available port: {port}");
             return port;
         }
 
